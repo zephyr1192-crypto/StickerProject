@@ -8,6 +8,7 @@ from config import settings
 from trend_scorer_cli import run_scraper
 # generate_stickers.py から画像生成関数だけをインポート
 from generate_stickers import generate_images
+from printful_exporter import upload_to_printful
 import pandas as pd
 
 app = typer.Typer(help="トレンド取得からステッカー生成までの自動パイプライン")
@@ -38,6 +39,12 @@ def run_pipeline(
         console.print(f"[bold red]画像生成中にエラーが発生しました: {e}[/bold red]")
         raise typer.Exit(code=1)
         
+    console.print("\n")
+    
+    # --- Step 3: Printful API連携 ---
+    console.print(Panel("[bold yellow]Step 3: Printfulへの自動アップロード[/bold yellow]", border_style="yellow"))
+    upload_to_printful(output_dir=output_dir)
+
     console.rule("[bold green]✨ All Processes Completed Successfully![/bold green]")
 
 if __name__ == "__main__":

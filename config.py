@@ -11,6 +11,9 @@ class AppSettings(BaseSettings):
     input_file: str = "hn_trends_analyzed.csv"
     output_dir: str = "stickers_output"
 
+    # Printful API連携用
+    printful_api_key: str = ""
+
     # .env ファイルから環境変数を読み込む (接頭辞なしで直接マッチさせる)
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
 
