@@ -5,6 +5,17 @@ on:
     - cron: '0 23 * * *'
   workflow_dispatch:
 
+# GitHub Pagesへのデプロイ権限を追加
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# デプロイの重複実行を防ぐ設定
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
   build-and-generate:
     runs-on: ubuntu-latest
@@ -34,10 +45,31 @@ jobs:
           STICKER_LIMIT: "5"
           STICKER_OUTPUT_DIR: stickers_output
 
-      # 成果物の名前を v2 に変更してダウンロード時の混同を防ぐ
+      # これまでのZIPバックアップ機能
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: premium-stickers-v2
           path: stickers_output/
           retention-days: 7
+
+      # Web公開用データの準備
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        
+      - name: Upload artifact for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: stickers_output/
+
+  # Webサイトとして公開（デプロイ）するジョブ
+  deploy-to-pages:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-and-generate # 生成が終わってから実行
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
