@@ -1,1 +1,6 @@
-pandasrequestsplaywrighttyperrichpydantic-settings
+pandas
+requests
+playwright
+typer
+rich
+pydantic-settings
