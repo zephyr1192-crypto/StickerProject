@@ -9,24 +9,51 @@ console = Console()
 def upload_to_temp_host(filepath: str) -> str:
     """
     ローカル画像を一時ホスティングにアップロードし、公開URLを取得する。
-    ※Catboxがクラウド環境からブロックされるため、tmpfiles.orgに変更
+    1つのサービスが落ちていても動作を継続できるよう、複数サービスの自動切り替え（フォールバック）を実装。
     """
-    url = "https://tmpfiles.org/api/v1/upload"
+    # ブラウザからのアクセスに偽装してボット除け（412エラー等）を回避
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    }
+
+    # --- 候補1: Catbox.moe (最も安定・ボット回避対応) ---
     try:
+        url = "https://catbox.moe/user/api.php"
+        data = {"reqtype": "fileupload", "userhash": ""}
+        with open(filepath, 'rb') as f:
+            files = {"fileToUpload": f}
+            res = requests.post(url, data=data, files=files, headers=headers, timeout=30)
+            res.raise_for_status()
+            if res.text.startswith("http"):
+                return res.text.strip()
+    except Exception as e:
+        console.print(f"[yellow]  [警告] 候補1 (Catbox) がダウンしています: {e}[/yellow]")
+
+    # --- 候補2: 0x0.st (エンジニア向けの軽量アップローダー) ---
+    try:
+        url = "https://0x0.st"
         with open(filepath, 'rb') as f:
             files = {"file": f}
-            response = requests.post(url, files=files, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            # 取得したURLを「直リンク」に変換してPrintfulに渡す
-            original_url = data["data"]["url"]
-            raw_url = original_url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
-            return raw_url
-            
+            res = requests.post(url, files=files, headers=headers, timeout=30)
+            res.raise_for_status()
+            if res.text.startswith("http"):
+                return res.text.strip()
     except Exception as e:
-        console.print(f"[red]一時ホスティングへのアップロードに失敗しました: {e}[/red]")
+        console.print(f"[yellow]  [警告] 候補2 (0x0.st) がダウンしています: {e}[/yellow]")
+
+    # --- 候補3: tmpfiles.org (先日ダウンしていたサーバー) ---
+    try:
+        url = "https://tmpfiles.org/api/v1/upload"
+        with open(filepath, 'rb') as f:
+            files = {"file": f}
+            res = requests.post(url, files=files, headers=headers, timeout=30)
+            res.raise_for_status()
+            data = res.json()
+            return data["data"]["url"].replace("tmpfiles.org/", "tmpfiles.org/dl/")
+    except Exception as e:
+        console.print(f"[red]  [エラー] 全ての一時サーバーが利用不可能です。[/red]")
         return ""
+
 
 def upload_to_printful(output_dir: str):
     """生成された画像をPrintfulへ登録する"""
