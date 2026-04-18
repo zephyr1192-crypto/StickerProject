@@ -59,7 +59,6 @@ jobs:
         with:
           path: stickers_output/
 
-      # 成功時にDiscordへ通知を送るステップ（新規追加）
       - name: Discord Notification (Success)
         if: success()
         run: |
@@ -67,7 +66,6 @@ jobs:
           -d '{"content": "✅ **ステッカー自動生成完了！**\nPrintfulへの納品とギャラリーの更新が終わりました。\nギャラリーを確認: https://zephyr1192-crypto.github.io/StickerProject/"}' \
           ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # 失敗時にDiscordへ通知を送るステップ（新規追加）
       - name: Discord Notification (Failure)
         if: failure()
         run: |
