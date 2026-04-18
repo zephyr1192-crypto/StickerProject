@@ -1,6 +1,6 @@
 id,title,score,descendants,time,url,datetime,heat_score,context_tag
-47806725,Claude Design,849,570,1776438249,https://www.anthropic.com/news/claude-design-anthropic-labs,2026-04-17 15:04:09,1419,AI
-47807006,Measuring Claude 4.7's tokenizer costs,542,376,1776439776,https://www.claudecodecamp.com/p/i-measured-claude-4-7-s-new-tokenizer-here-s-what-it-costs-you,2026-04-17 15:29:36,918,AI
-47804965,Isaac Asimov: The Last Question (1956),624,260,1776427279,https://hex.ooo/library/last_question.html,2026-04-17 12:01:19,884,Other
-47807209,NASA Force,232,245,1776440861,https://nasaforce.gov/,2026-04-17 15:47:41,477,Other
-47808913,"All 12 moonwalkers had ""lunar hay fever"" from dust smelling like gunpowder (2018)",233,133,1776449821,https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/The_toxic_side_of_the_Moon,2026-04-17 18:17:01,366,Other
+47806725,Claude Design,1114,723,1776438249,https://www.anthropic.com/news/claude-design-anthropic-labs,2026-04-17 15:04:09,1837,AI
+47807006,Measuring Claude 4.7's tokenizer costs,650,456,1776439776,https://www.claudecodecamp.com/p/i-measured-claude-4-7-s-new-tokenizer-here-s-what-it-costs-you,2026-04-17 15:29:36,1106,AI
+47808913,"All 12 moonwalkers had ""lunar hay fever"" from dust smelling like gunpowder (2018)",393,230,1776449821,https://www.esa.int/Science_Exploration/Human_and_Robotic_Exploration/The_toxic_side_of_the_Moon,2026-04-17 18:17:01,623,Other
+47807583,I’m spending months coding the old way,264,262,1776442793,https://miguelconner.substack.com/p/im-coding-by-hand,2026-04-17 16:19:53,526,Other
+47815774,"Migrating from DigitalOcean to Hetzner: From $1,432 to $233 With Zero Downtime",230,83,1776518944,https://isayeter.com/posts/digitalocean-to-hetzner-migration/,2026-04-18 13:29:04,313,Other

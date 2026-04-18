@@ -1,9 +1,12 @@
-import requests
+import typer
 import pandas as pd
+import requests
 import time
 from rich.console import Console
 from rich.progress import track
+from feedback_manager import add_negative_word
 
+app = typer.Typer()
 console = Console()
 HN_BASE_URL = "https://hacker-news.firebaseio.com/v0"
 
@@ -34,7 +37,7 @@ def fetch_story_details(story_ids):
                 break
             except requests.exceptions.RequestException:
                 time.sleep(1)
-        time.sleep(0.05) # API負荷軽減
+        time.sleep(0.05)
     return stories
 
 def assign_context(title):
@@ -46,7 +49,7 @@ def assign_context(title):
 
 def run_scraper(limit: int, output_file: str):
     """メインのスクレイピング処理。他ファイルから呼び出される。"""
-    story_ids = fetch_top_story_ids(limit=limit * 3) # スコア上位を抽出するため多めに取得
+    story_ids = fetch_top_story_ids(limit=limit * 3)
     stories_data = fetch_story_details(story_ids)
     
     if not stories_data:
@@ -59,8 +62,20 @@ def run_scraper(limit: int, output_file: str):
     df_sorted = df.sort_values(by='heat_score', ascending=False)
     df_sorted['context_tag'] = df_sorted['title'].apply(assign_context)
     
-    # 必要な件数に絞って保存
     df_final = df_sorted.head(limit)
     df_final.to_csv(output_file, index=False, encoding='utf-8')
     console.print(f"[green]トレンドデータを '{output_file}' に保存しました。({len(df_final)}件)[/green]")
     return True
+
+@app.command("scrape")
+def scrape_cmd(limit: int = 5, output_file: str = "hn_trends_analyzed.csv"):
+    """手動でスクレイピングのみを実行するコマンド"""
+    run_scraper(limit, output_file)
+
+@app.command("ban")
+def ban_word(word: str, reason: str = typer.Option("Not suitable for stickers", help="Reason for banning")):
+    """指定したワードを負のデータとして学習させ、今後の生成から除外する"""
+    add_negative_word(word, reason)
+
+if __name__ == "__main__":
+    app()
