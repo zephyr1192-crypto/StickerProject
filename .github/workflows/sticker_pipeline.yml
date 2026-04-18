@@ -5,13 +5,11 @@ on:
     - cron: '0 23 * * *'
   workflow_dispatch:
 
-# GitHub Pagesへのデプロイ権限を追加
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# デプロイの重複実行を防ぐ設定
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -44,8 +42,8 @@ jobs:
         env:
           STICKER_LIMIT: "5"
           STICKER_OUTPUT_DIR: stickers_output
+          PRINTFUL_API_KEY: ${{ secrets.PRINTFUL_API_KEY }}
 
-      # これまでのZIPバックアップ機能
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -53,7 +51,6 @@ jobs:
           path: stickers_output/
           retention-days: 7
 
-      # Web公開用データの準備
       - name: Setup Pages
         uses: actions/configure-pages@v4
         
@@ -62,13 +59,28 @@ jobs:
         with:
           path: stickers_output/
 
-  # Webサイトとして公開（デプロイ）するジョブ
+      # 成功時にDiscordへ通知を送るステップ（新規追加）
+      - name: Discord Notification (Success)
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "✅ **ステッカー自動生成完了！**\nPrintfulへの納品とギャラリーの更新が終わりました。\nギャラリーを確認: https://zephyr1192-crypto.github.io/StickerProject/"}' \
+          ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      # 失敗時にDiscordへ通知を送るステップ（新規追加）
+      - name: Discord Notification (Failure)
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"content": "🚨 **【警告】ステッカー生成でエラーが発生しました！**\nGitHub Actionsのログを確認してください。"}' \
+          ${{ secrets.DISCORD_WEBHOOK_URL }}
+
   deploy-to-pages:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build-and-generate # 生成が終わってから実行
+    needs: build-and-generate
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
