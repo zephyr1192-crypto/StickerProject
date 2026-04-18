@@ -1,16 +1,13 @@
 name: Sticker Automation Pipeline
 
-# 実行タイミングの設定
 on:
   schedule:
     - cron: '0 23 * * *'
   workflow_dispatch:
 
-# 実行環境と手順の設定
 jobs:
   build-and-generate:
     runs-on: ubuntu-latest
-    # ★追加: Node.js 20の非推奨警告を消し、安全な最新版(Node 24)を強制使用する
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -27,7 +24,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # ★変更: requirements.txtから一括インストールするように最適化
           pip install -r requirements.txt
           playwright install chromium
           playwright install-deps
@@ -38,9 +34,10 @@ jobs:
           STICKER_LIMIT: "5"
           STICKER_OUTPUT_DIR: stickers_output
 
+      # 成果物の名前を v2 に変更してダウンロード時の混同を防ぐ
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: generated-stickers
+          name: premium-stickers-v2
           path: stickers_output/
           retention-days: 7
