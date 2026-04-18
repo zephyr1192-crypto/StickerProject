@@ -1,0 +1,50 @@
+name: Sticker Automation Pipeline
+
+# 実行タイミングの設定
+on:
+  # 毎日 日本時間 午前8時 (UTC 23:00) に自動実行
+  schedule:
+    - cron: '0 23 * * *'
+  # GitHubのWeb画面から手動で実行するためのボタンを有効化
+  workflow_dispatch:
+
+# 実行環境と手順の設定
+jobs:
+  build-and-generate:
+    runs-on: ubuntu-latest # 最新のLinux環境を使用
+
+    steps:
+      # 1. リポジトリのコードをサーバーにダウンロード
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Python環境の準備
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # 2回目以降の実行を高速化
+
+      # 3. 必要なライブラリとPlaywrightブラウザのインストール
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests playwright typer rich pydantic-settings
+          playwright install chromium
+          playwright install-deps
+
+      # 4. パイプラインの実行
+      - name: Run Main Pipeline
+        run: python main.py
+        env:
+          # PCの.envの代わりとなる環境変数をここに設定 (文字列として "5" を指定)
+          STICKER_LIMIT: "5"
+          STICKER_OUTPUT_DIR: stickers_output
+
+      # 5. 生成された画像をダウンロード可能なZIPとして保存
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-stickers
+          path: stickers_output/
+          retention-days: 7 # 7日間保存
