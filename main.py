@@ -4,8 +4,11 @@ import base64
 import requests
 import time
 import re
+import urllib.parse
 from datetime import datetime
 import traceback
+import google.generativeai as genai
+import PIL.Image
 
 # --- Configuration (GitHub Secrets) ---
 STICKER_LIMIT = int(os.getenv("STICKER_LIMIT", "5"))
@@ -16,12 +19,7 @@ PRINTFUL_STORE_ID = os.getenv("PRINTFUL_STORE_ID", "").strip()
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 FREEIMAGE_HOST_KEY = os.getenv("FREEIMAGE_HOST_KEY", "6d207e02198a847aa98d0a2a901485a5").strip()
 
-# Models
-TEXT_VISION_MODEL = "gemini-2.5-flash-preview-09-2025"
-IMAGE_MODEL = "imagen-4.0-generate-001"
-
 # Printful Settings
-# 11152で400エラーが出たため、Kiss-cut Stickers (3"x3") の標準的なID 3559 に変更
 VARIANT_ID = 3559 
 
 def log(msg, error=False):
@@ -30,31 +28,22 @@ def log(msg, error=False):
     print(f"{timestamp} {prefix} {msg}")
 
 def call_gemini_text(prompt):
-    """テキスト生成"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{TEXT_VISION_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
-    
-    for i in range(5):
-        try:
-            response = requests.post(url, json=payload, timeout=30)
-            response.raise_for_status()
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            if i == 4:
-                log(f"Gemini Text API Error: {e}", error=True)
-                return None
-            time.sleep(2**i)
-    return None
+    """Gemini 1.5 Flash (テキスト生成)"""
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        log(f"Gemini Text API Error: {e}", error=True)
+        return None
 
 def call_gemini_vision_seo(img_path, hn_title):
-    """画像解析によるSEO生成"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{TEXT_VISION_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    
+    """Gemini 1.5 Flash (画像解析 + SEO生成)"""
     try:
-        with open(img_path, "rb") as f:
-            img_data = base64.b64encode(f.read()).decode("utf-8")
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        img = PIL.Image.open(img_path)
         
         prompt = f"""
         Act as an e-commerce SEO expert. 
@@ -63,47 +52,30 @@ def call_gemini_vision_seo(img_path, hn_title):
         Return ONLY a JSON object: {{"title": "...", "description": "...", "tags": ["tag1", "tag2"]}}
         """
         
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": "image/png", "data": img_data}}
-                ]
-            }]
-        }
-        
-        for i in range(5):
-            response = requests.post(url, json=payload, timeout=30)
-            if response.status_code == 200:
-                text = response.json()['candidates'][0]['content']['parts'][0]['text']
-                match = re.search(r'\{.*\}', text, re.DOTALL)
-                return json.loads(match.group()) if match else json.loads(text)
-            time.sleep(2**i)
-            
-        raise Exception("API Retry limit exceeded")
+        response = model.generate_content([prompt, img])
+        text = response.text
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        return json.loads(match.group()) if match else json.loads(text)
     except Exception as e:
         log(f"SEO Generation Error: {e}", error=True)
         return {"title": f"Tech Trend Sticker: {hn_title[:20]}", "description": hn_title, "tags": ["tech"]}
 
 def generate_sticker_image(prompt):
-    """画像生成"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{IMAGE_MODEL}:predict?key={GEMINI_API_KEY}"
-    payload = {
-        "instances": {"prompt": prompt},
-        "parameters": {"sampleCount": 1}
-    }
-    
-    for i in range(5):
-        try:
-            response = requests.post(url, json=payload, timeout=60)
-            response.raise_for_status()
-            return response.json()['predictions'][0]['bytesBase64Encoded']
-        except Exception as e:
-            if i == 4:
-                log(f"Imagen API Error: {e}", error=True)
-                return None
-            time.sleep(2**i)
-    return None
+    """無料の画像生成APIを使用して画像を生成"""
+    try:
+        # プロンプトをURLエンコード
+        encoded_prompt = urllib.parse.quote(prompt + " sticker design, die-cut, white background, vector art")
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
+        
+        res = requests.get(url, timeout=60)
+        if res.status_code == 200:
+            return base64.b64encode(res.content).decode('utf-8')
+        else:
+            log(f"Image API Error: {res.status_code}", error=True)
+            return None
+    except Exception as e:
+        log(f"Image Generation Error: {e}", error=True)
+        return None
 
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
@@ -161,7 +133,10 @@ def notify_discord(title, public_url, error_msg=None):
     else:
         content = f"🚀 **新商品出品!**\n**Title:** {title}\n**URL:** {public_url}"
         
-    requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
+    except:
+        pass
 
 def main():
     if not os.path.exists(OUTPUT_DIR):
@@ -184,26 +159,36 @@ def main():
             log(f"Processing: {hn_title}")
 
             # 1. 画像生成用プロンプト作成
-            sys_prompt = f"Create a professional sticker design prompt for: '{hn_title}'. Style: Die-cut, vector art, white border, minimalist. Output ONLY the visual prompt."
+            sys_prompt = f"Create a professional sticker design prompt for: '{hn_title}'. Output ONLY the visual prompt in English."
             image_prompt = call_gemini_text(sys_prompt)
-            if not image_prompt: continue
+            if not image_prompt: 
+                log("Failed to generate prompt", error=True)
+                continue
             
             # 2. 画像生成
+            log("Generating Image...")
             img_b64 = generate_sticker_image(image_prompt)
-            if not img_b64: continue
+            if not img_b64: 
+                log("Failed to generate image", error=True)
+                continue
             
             filepath = os.path.join(OUTPUT_DIR, f"{story_id}.png")
             with open(filepath, "wb") as f:
                 f.write(base64.b64decode(img_b64))
 
             # 3. 画像解析によるSEOメタデータ生成
+            log("Generating SEO Data...")
             seo_data = call_gemini_vision_seo(filepath, hn_title)
 
             # 4. 公開URL化
+            log("Uploading to Freeimage.host...")
             public_url = upload_to_temp_host(filepath)
-            if not public_url: continue
+            if not public_url: 
+                log("Failed to upload image to host", error=True)
+                continue
 
             # 5. Printful出品
+            log("Uploading to Printful...")
             result = upload_to_printful(public_url, seo_data)
             
             if 'error' in str(result).lower():
@@ -216,6 +201,9 @@ def main():
                 
         except Exception as e:
             log(f"Error processing story {story_id}: {traceback.format_exc()}", error=True)
+            
+        # APIのレートリミット対策 (Gemini無料枠は15RPM)
+        time.sleep(5)
 
     log(f"Pipeline Completed. Success: {success_count}/{STICKER_LIMIT}")
 
