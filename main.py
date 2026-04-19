@@ -7,8 +7,6 @@ import re
 import urllib.parse
 from datetime import datetime
 import traceback
-import google.generativeai as genai
-import PIL.Image
 
 # --- Configuration (GitHub Secrets) ---
 STICKER_LIMIT = int(os.getenv("STICKER_LIMIT", "5"))
@@ -28,23 +26,24 @@ def log(msg, error=False):
     print(f"{timestamp} {prefix} {msg}")
 
 def call_gemini_text(prompt):
-    """Gemini 1.5 Flash (テキスト生成)"""
+    """Gemini 1.5 Flash (テキスト生成 - REST API版)"""
+    url = "https://" + f"[generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text
+        res = requests.post(url, json=payload, timeout=30)
+        res.raise_for_status()
+        return res.json()['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
         log(f"Gemini Text API Error: {e}", error=True)
         return None
 
 def call_gemini_vision_seo(img_path, hn_title):
-    """Gemini 1.5 Flash (画像解析 + SEO生成)"""
+    """Gemini 1.5 Flash (画像解析 + SEO生成 - REST API版)"""
+    url = "https://" + f"[generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        img = PIL.Image.open(img_path)
-        
+        with open(img_path, "rb") as f:
+            img_data = base64.b64encode(f.read()).decode("utf-8")
+            
         prompt = f"""
         Act as an e-commerce SEO expert. 
         Analyze this sticker image generated from the tech news: "{hn_title}".
@@ -52,8 +51,18 @@ def call_gemini_vision_seo(img_path, hn_title):
         Return ONLY a JSON object: {{"title": "...", "description": "...", "tags": ["tag1", "tag2"]}}
         """
         
-        response = model.generate_content([prompt, img])
-        text = response.text
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": "image/png", "data": img_data}}
+                ]
+            }]
+        }
+        
+        res = requests.post(url, json=payload, timeout=30)
+        res.raise_for_status()
+        text = res.json()['candidates'][0]['content']['parts'][0]['text']
         match = re.search(r'\{.*\}', text, re.DOTALL)
         return json.loads(match.group()) if match else json.loads(text)
     except Exception as e:
@@ -63,9 +72,9 @@ def call_gemini_vision_seo(img_path, hn_title):
 def generate_sticker_image(prompt):
     """無料の画像生成APIを使用して画像を生成"""
     try:
-        # プロンプトをURLエンコード
         encoded_prompt = urllib.parse.quote(prompt + " sticker design, die-cut, white background, vector art")
-        url = f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){encoded_prompt}?width=512&height=512&nologo=true"
+        # Markdownの自動リンク化を防ぐためURLを分割
+        url = "https://" + f"image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
         
         res = requests.get(url, timeout=60)
         if res.status_code == 200:
@@ -80,7 +89,7 @@ def generate_sticker_image(prompt):
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
     try:
-        url = "[https://freeimage.host/api/1/upload](https://freeimage.host/api/1/upload)"
+        url = "https://" + "freeimage.host/api/1/upload"
         data = {"key": FREEIMAGE_HOST_KEY, "action": "upload", "format": "json"}
         with open(filepath, 'rb') as f:
             res = requests.post(url, data=data, files={"source": f}, timeout=30)
@@ -99,15 +108,13 @@ def upload_to_printful(public_url, seo_data):
         "Content-Type": "application/json"
     }
 
-    # 1. File Library への登録
     file_payload = {"role": "artwork", "url": public_url}
-    file_res = requests.post("[https://api.printful.com/files](https://api.printful.com/files)", headers=headers, json=file_payload, timeout=60)
+    file_res = requests.post("https://" + "[api.printful.com/files](https://api.printful.com/files)", headers=headers, json=file_payload, timeout=60)
     if file_res.status_code != 200:
         return {"error": f"File API Error: {file_res.text}"}
     
     file_id = file_res.json()['result']['id']
 
-    # 2. Sync Product の作成
     product_payload = {
         "sync_product": {
             "name": seo_data["title"],
@@ -122,7 +129,7 @@ def upload_to_printful(public_url, seo_data):
         ]
     }
     
-    res = requests.post("[https://api.printful.com/sync/products](https://api.printful.com/sync/products)", headers=headers, json=product_payload, timeout=60)
+    res = requests.post("https://" + "[api.printful.com/sync/products](https://api.printful.com/sync/products)", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
 def notify_discord(title, public_url, error_msg=None):
@@ -145,27 +152,28 @@ def main():
     log("Pipeline Started")
     
     try:
-        top_ids = requests.get("[https://hacker-news.firebaseio.com/v0/topstories.json](https://hacker-news.firebaseio.com/v0/topstories.json)").json()
+        hn_url = "https://" + "[hacker-news.firebaseio.com/v0/topstories.json](https://hacker-news.firebaseio.com/v0/topstories.json)"
+        top_ids = requests.get(hn_url).json()
     except Exception as e:
-        log("Failed to fetch Hacker News", error=True)
+        log(f"Failed to fetch Hacker News: {e}", error=True)
         return
         
     success_count = 0
     
     for story_id in top_ids[:STICKER_LIMIT]:
         try:
-            story = requests.get(f"[https://hacker-news.firebaseio.com/v0/item/](https://hacker-news.firebaseio.com/v0/item/){story_id}.json").json()
+            item_url = "https://" + f"[hacker-news.firebaseio.com/v0/item/](https://hacker-news.firebaseio.com/v0/item/){story_id}.json"
+            story = requests.get(item_url).json()
             hn_title = story.get('title')
             log(f"Processing: {hn_title}")
 
-            # 1. 画像生成用プロンプト作成
+            log("Generating Text Prompt...")
             sys_prompt = f"Create a professional sticker design prompt for: '{hn_title}'. Output ONLY the visual prompt in English."
             image_prompt = call_gemini_text(sys_prompt)
             if not image_prompt: 
                 log("Failed to generate prompt", error=True)
                 continue
             
-            # 2. 画像生成
             log("Generating Image...")
             img_b64 = generate_sticker_image(image_prompt)
             if not img_b64: 
@@ -176,18 +184,15 @@ def main():
             with open(filepath, "wb") as f:
                 f.write(base64.b64decode(img_b64))
 
-            # 3. 画像解析によるSEOメタデータ生成
             log("Generating SEO Data...")
             seo_data = call_gemini_vision_seo(filepath, hn_title)
 
-            # 4. 公開URL化
             log("Uploading to Freeimage.host...")
             public_url = upload_to_temp_host(filepath)
             if not public_url: 
                 log("Failed to upload image to host", error=True)
                 continue
 
-            # 5. Printful出品
             log("Uploading to Printful...")
             result = upload_to_printful(public_url, seo_data)
             
@@ -202,7 +207,6 @@ def main():
         except Exception as e:
             log(f"Error processing story {story_id}: {traceback.format_exc()}", error=True)
             
-        # APIのレートリミット対策 (Gemini無料枠は15RPM)
         time.sleep(5)
 
     log(f"Pipeline Completed. Success: {success_count}/{STICKER_LIMIT}")
