@@ -1,7 +1,7 @@
 {
-  "gemini": "[https://generativelanguage.googleapis.com](https://generativelanguage.googleapis.com)",
-  "pollinations": "[https://image.pollinations.ai](https://image.pollinations.ai)",
-  "freeimage": "[https://freeimage.host](https://freeimage.host)",
-  "printful": "[https://api.printful.com](https://api.printful.com)",
-  "hacker_news": "[https://hacker-news.firebaseio.com](https://hacker-news.firebaseio.com)"
+  "gemini": "generativelanguage.googleapis.com",
+  "pollinations": "image.pollinations.ai",
+  "freeimage": "freeimage.host",
+  "printful": "api.printful.com",
+  "hacker_news": "hacker-news.firebaseio.com"
 }
