@@ -46,6 +46,7 @@ jobs:
           PRINTFUL_STORE_ID: ${{ secrets.PRINTFUL_STORE_ID }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FREEIMAGE_HOST_KEY: ${{ secrets.FREEIMAGE_HOST_KEY }} # 追記: freeimage.host用APIキー
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
