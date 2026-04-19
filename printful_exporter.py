@@ -1,62 +1,18 @@
 import os
 import glob
+import base64
 import requests
 from rich.console import Console
 from config import settings
 
 console = Console()
 
-def upload_to_temp_host(filepath: str) -> str:
-    """
-    ローカル画像を一時ホスティングにアップロードし、公開URLを取得する。
-    1つのサービスが落ちていても動作を継続できるよう、複数サービスの自動切り替え（フォールバック）を実装。
-    """
-    # ブラウザからのアクセスに偽装してボット除け（412エラー等）を回避
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    }
-
-    # --- 候補1: Catbox.moe (最も安定・ボット回避対応) ---
-    try:
-        url = "https://catbox.moe/user/api.php"
-        data = {"reqtype": "fileupload", "userhash": ""}
-        with open(filepath, 'rb') as f:
-            files = {"fileToUpload": f}
-            res = requests.post(url, data=data, files=files, headers=headers, timeout=30)
-            res.raise_for_status()
-            if res.text.startswith("http"):
-                return res.text.strip()
-    except Exception as e:
-        console.print(f"[yellow]  [警告] 候補1 (Catbox) がダウンしています: {e}[/yellow]")
-
-    # --- 候補2: 0x0.st (エンジニア向けの軽量アップローダー) ---
-    try:
-        url = "https://0x0.st"
-        with open(filepath, 'rb') as f:
-            files = {"file": f}
-            res = requests.post(url, files=files, headers=headers, timeout=30)
-            res.raise_for_status()
-            if res.text.startswith("http"):
-                return res.text.strip()
-    except Exception as e:
-        console.print(f"[yellow]  [警告] 候補2 (0x0.st) がダウンしています: {e}[/yellow]")
-
-    # --- 候補3: tmpfiles.org (先日ダウンしていたサーバー) ---
-    try:
-        url = "https://tmpfiles.org/api/v1/upload"
-        with open(filepath, 'rb') as f:
-            files = {"file": f}
-            res = requests.post(url, files=files, headers=headers, timeout=30)
-            res.raise_for_status()
-            data = res.json()
-            return data["data"]["url"].replace("tmpfiles.org/", "tmpfiles.org/dl/")
-    except Exception as e:
-        console.print(f"[red]  [エラー] 全ての一時サーバーが利用不可能です。[/red]")
-        return ""
-
-
 def upload_to_printful(output_dir: str):
-    """生成された画像をPrintfulへ登録する"""
+    """
+    生成された画像をPrintfulへ登録する。
+    不安定な一時サーバーを廃止し、Printful公式仕様である 
+    `base64` パラメータを用いた直接アップロード方式を採用。
+    """
     api_key = settings.printful_api_key
     
     if not api_key or api_key.startswith("your_"):
@@ -78,24 +34,22 @@ def upload_to_printful(output_dir: str):
         filename = os.path.basename(img_path)
         console.print(f"[cyan]処理中: {filename}[/cyan]")
         
-        console.print("  -> 一時サーバーで公開URLを発行中...")
-        public_url = upload_to_temp_host(img_path)
-        
-        if not public_url or not public_url.startswith("http"):
-            console.print(f"[red]✖ 公開URLの取得に失敗したためスキップします。[/red]")
-            continue
-            
-        console.print(f"  -> URL取得成功: {public_url}")
-        
-        printful_url = "https://api.printful.com/files"
-        payload = {
-            "role": "artwork",
-            "url": public_url,
-            "filename": filename
-        }
-        
         try:
-            console.print("  -> Printfulのライブラリに登録中...")
+            # 画像ファイルを読み込み、純粋なBase64文字列に変換
+            with open(img_path, "rb") as f:
+                img_data = f.read()
+                base64_data = base64.b64encode(img_data).decode("utf-8")
+                
+            printful_url = "https://api.printful.com/files"
+            
+            # Printful公式仕様に完全準拠した直接送信ペイロード
+            payload = {
+                "role": "artwork",
+                "base64": base64_data,  # urlではなくbase64パラメータを使用
+                "filename": filename
+            }
+            
+            console.print("  -> Printfulのライブラリに直接登録中...")
             response = requests.post(
                 printful_url, 
                 headers=headers, 
@@ -109,6 +63,7 @@ def upload_to_printful(output_dir: str):
                 
             if response.status_code != 200:
                 console.print(f"[red]✖ Printfulへの登録失敗: {response.status_code}[/red]")
+                console.print(f"[red]詳細: {response.text}[/red]")
                 continue
 
             res_json = response.json()
