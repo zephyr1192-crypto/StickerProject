@@ -65,7 +65,7 @@ def generate_sticker_image(prompt):
     try:
         # プロンプトをURLエンコード
         encoded_prompt = urllib.parse.quote(prompt + " sticker design, die-cut, white background, vector art")
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
+        url = f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){encoded_prompt}?width=512&height=512&nologo=true"
         
         res = requests.get(url, timeout=60)
         if res.status_code == 200:
@@ -80,7 +80,7 @@ def generate_sticker_image(prompt):
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
     try:
-        url = "https://freeimage.host/api/1/upload"
+        url = "[https://freeimage.host/api/1/upload](https://freeimage.host/api/1/upload)"
         data = {"key": FREEIMAGE_HOST_KEY, "action": "upload", "format": "json"}
         with open(filepath, 'rb') as f:
             res = requests.post(url, data=data, files={"source": f}, timeout=30)
@@ -101,7 +101,7 @@ def upload_to_printful(public_url, seo_data):
 
     # 1. File Library への登録
     file_payload = {"role": "artwork", "url": public_url}
-    file_res = requests.post("https://api.printful.com/files", headers=headers, json=file_payload, timeout=60)
+    file_res = requests.post("[https://api.printful.com/files](https://api.printful.com/files)", headers=headers, json=file_payload, timeout=60)
     if file_res.status_code != 200:
         return {"error": f"File API Error: {file_res.text}"}
     
@@ -122,7 +122,7 @@ def upload_to_printful(public_url, seo_data):
         ]
     }
     
-    res = requests.post("https://api.printful.com/sync/products", headers=headers, json=product_payload, timeout=60)
+    res = requests.post("[https://api.printful.com/sync/products](https://api.printful.com/sync/products)", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
 def notify_discord(title, public_url, error_msg=None):
@@ -145,7 +145,7 @@ def main():
     log("Pipeline Started")
     
     try:
-        top_ids = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json").json()
+        top_ids = requests.get("[https://hacker-news.firebaseio.com/v0/topstories.json](https://hacker-news.firebaseio.com/v0/topstories.json)").json()
     except Exception as e:
         log("Failed to fetch Hacker News", error=True)
         return
@@ -154,7 +154,7 @@ def main():
     
     for story_id in top_ids[:STICKER_LIMIT]:
         try:
-            story = requests.get(f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json").json()
+            story = requests.get(f"[https://hacker-news.firebaseio.com/v0/item/](https://hacker-news.firebaseio.com/v0/item/){story_id}.json").json()
             hn_title = story.get('title')
             log(f"Processing: {hn_title}")
 
