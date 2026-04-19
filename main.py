@@ -7,7 +7,7 @@ from rich.panel import Panel
 
 # 各モジュールからの機能インポート
 from config import settings
-from hn_trend_scorer import fetch_top_story_ids, fetch_story_details, process_and_analyze
+from trend_scorer_cli import run_scraper  # ← 正しいファイルからインポートするように修正
 from generate_stickers import generate_images
 from printful_exporter import upload_to_printful
 
@@ -41,11 +41,10 @@ def main():
     try:
         # --- Step 1: データ取得 ---
         console.print(Panel("[bold yellow]Step 1: Hacker Newsトレンド取得[/bold yellow]", border_style="yellow"))
-        ids = fetch_top_story_ids(limit=limit * 2)
-        details = fetch_story_details(ids)
-        df = process_and_analyze(details)
-        df.to_csv(csv_file, index=False)
-        console.print(f"[green]データを {csv_file} に保存しました。[/green]")
+        # trend_scorer_cli.py に実装済みの処理を呼び出す
+        success = run_scraper(limit=limit, output_file=csv_file)
+        if not success:
+            raise Exception("トレンドデータの取得に失敗しました。")
 
         # --- Step 2: 画像生成 ---
         console.print(Panel("[bold yellow]Step 2: ステッカー生成[/bold yellow]", border_style="yellow"))
