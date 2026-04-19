@@ -199,95 +199,61 @@ def upload_to_temp_host(filepath):
         log(f"Freeimage Host Error: {e}", error=True)
     return ""
 
-def get_valid_sticker_variant(headers, base_host):
-    """Printfulのカタログから有効なステッカーのVariant IDを動的に自動取得する（型エラー完全回避版）"""
-    try:
-        # ステッカーの代表的なProduct ID(14)で検索
-        res = requests.get(f"https://{base_host}/catalog/products/14", headers=headers, timeout=30)
-        if res.status_code == 200:
-            data = res.json()
-            result = data.get("result", {})
-            
-            # パターンA: resultが辞書型（公式ドキュメント準拠）
-            if isinstance(result, dict):
-                variants = result.get("variants", [])
-                if isinstance(variants, list) and len(variants) > 0 and isinstance(variants[0], dict):
-                    vid = variants[0].get("id")
-                    if vid:
-                        log(f"Found valid default variant ID (Pattern A): {vid}")
-                        return vid
-                        
-            # パターンB: result自体がリスト型（API仕様のサイレント変更時）
-            elif isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
-                vid = result[0].get("id")
-                if vid:
-                    log(f"Found valid default variant ID (Pattern B): {vid}")
-                    return vid
-
-        # Product 14がダメなら、カタログ全体から "sticker" を検索
-        res_all = requests.get(f"https://{base_host}/catalog/products", headers=headers, timeout=30)
-        if res_all.status_code == 200:
-            result_all = res_all.json().get("result", [])
-            
-            if isinstance(result_all, dict):
-                result_all = [result_all]
-                
-            if isinstance(result_all, list):
-                for p in result_all:
-                    if isinstance(p, dict) and "sticker" in p.get("title", "").lower():
-                        prod_id = p.get("id")
-                        if not prod_id: continue
-                        
-                        res_var = requests.get(f"https://{base_host}/catalog/products/{prod_id}", headers=headers, timeout=30)
-                        if res_var.status_code == 200:
-                            var_data = res_var.json()
-                            var_result = var_data.get("result", {})
-                            
-                            if isinstance(var_result, dict):
-                                variants = var_result.get("variants", [])
-                                if isinstance(variants, list) and len(variants) > 0 and isinstance(variants[0], dict):
-                                    vid = variants[0].get("id")
-                                    if vid:
-                                        log(f"Found dynamic variant ID from catalog: {vid}")
-                                        return vid
-                            elif isinstance(var_result, list) and len(var_result) > 0 and isinstance(var_result[0], dict):
-                                vid = var_result[0].get("id")
-                                if vid:
-                                    log(f"Found dynamic variant ID from catalog (List format): {vid}")
-                                    return vid
-    except Exception as e:
-        log(f"Auto-Fetch Variant Error: {e}", error=True)
-    
-    log("Could not dynamically fetch variant ID. Using fallback ID: 3559", error=True)
-    return 3559
-
 def upload_to_printful(public_url, seo_data):
-    """Printfulへの出品"""
+    """Printfulへの出品 (総当たり・ブルートフォースアプローチ)"""
     headers = {
         "Authorization": f"Bearer {PRINTFUL_API_KEY}",
         "X-PF-Store-Id": PRINTFUL_STORE_ID,
         "Content-Type": "application/json"
     }
-
     base_host = ENDPOINTS.get("printful")
-    valid_variant_id = get_valid_sticker_variant(headers, base_host)
     
-    product_payload = {
-        "sync_product": {
-            "name": seo_data["title"],
-            "thumbnail": public_url
-        },
-        "sync_variants": [
-            {
-                "variant_id": valid_variant_id,
-                "retail_price": "7.99",
-                "files": [{"url": public_url}]
-            }
-        ]
-    }
+    # 様々な種類のステッカーと、絶対に有効な商品の型番リスト
+    candidate_variants = [
+        3559,   # Kiss-Cut Stickers (3x3)
+        11152,  # Bubble-free stickers (3x3)
+        12056,  # Holographic stickers (3x3)
+        6867,   # Kiss-Cut Stickers (4x4)
+        7291,   # Die-Cut Stickers (3x3)
+        9081,   # White Vinyl Stickers
+        1,      # Enhanced Matte Paper Poster (8x10) - ステッカー以外へのフォールバック
+        462     # White Glossy Mug (11oz) - ステッカー以外へのフォールバック
+    ]
     
-    res = requests.post(f"https://{base_host}/store/products", headers=headers, json=product_payload, timeout=60)
-    return res.json()
+    last_error_res = None
+    
+    for vid in candidate_variants:
+        product_payload = {
+            "sync_product": {
+                "name": seo_data["title"],
+                "thumbnail": public_url
+            },
+            "sync_variants": [
+                {
+                    "variant_id": vid,
+                    "retail_price": "7.99",
+                    "files": [{"url": public_url}]
+                }
+            ]
+        }
+        
+        res = requests.post(f"https://{base_host}/store/products", headers=headers, json=product_payload, timeout=60)
+        
+        if res.status_code == 200:
+            log(f"Printful Upload Success with Variant ID: {vid}")
+            return res.json()
+            
+        last_error_res = res.json()
+        err_msg = str(last_error_res).lower()
+        log(f"Variant {vid} failed: {last_error_res.get('error', {}).get('message', 'Unknown Error')}")
+        
+        # 認証エラー(401)等の場合は総当たりしても無駄なので即時終了
+        if res.status_code in [401, 403]:
+            return last_error_res
+            
+        time.sleep(2) # Printful APIのレートリミット回避
+        
+    return last_error_res
 
 def notify_discord(title, public_url, error_msg=None):
     if not DISCORD_WEBHOOK_URL: return
