@@ -26,27 +26,39 @@ def log(msg, error=False):
     print(f"{timestamp} {prefix} {msg}")
 
 def load_endpoints():
-    """外部設定ファイルからAPIエンドポイントを読み込む"""
+    """外部設定ファイルからAPIエンドポイントを読み込み、自動リンクバグをサニタイズする"""
+    default_endpoints = {
+        "gemini": "generativelanguage.googleapis.com",
+        "pollinations": "image.pollinations.ai",
+        "freeimage": "freeimage.host",
+        "printful": "api.printful.com",
+        "hacker_news": "hacker-news.firebaseio.com"
+    }
     try:
         with open("endpoints.json", "r") as f:
-            return json.load(f)
+            raw_data = json.load(f)
+            clean_data = {}
+            for k, v in raw_data.items():
+                # Markdownリンクの自動変換バグを検知して修復: "[url](url)" -> "url"
+                match = re.search(r'\]\((.*?)\)', v)
+                if match:
+                    v = match.group(1)
+                # URLから https:// や余計なカッコを削除し、純粋なホスト名のみを抽出
+                v = v.replace("https://", "").replace("http://", "")
+                v = v.replace("[", "").replace("]", "").strip()
+                clean_data[k] = v
+            return clean_data
     except Exception as e:
         log(f"Failed to load endpoints.json: {e}", error=True)
-        # フォールバック用のデフォルトURL（エラー回避用）
-        return {
-            "gemini": "[https://generativelanguage.googleapis.com](https://generativelanguage.googleapis.com)",
-            "pollinations": "[https://image.pollinations.ai](https://image.pollinations.ai)",
-            "freeimage": "[https://freeimage.host](https://freeimage.host)",
-            "printful": "[https://api.printful.com](https://api.printful.com)",
-            "hacker_news": "[https://hacker-news.firebaseio.com](https://hacker-news.firebaseio.com)"
-        }
+        return default_endpoints
 
+# エンドポイントの辞書をグローバル変数として保持
 ENDPOINTS = load_endpoints()
 
 def call_gemini_text(prompt):
     """Gemini 1.5 Flash (テキスト生成 - REST API版)"""
-    base_url = ENDPOINTS.get("gemini")
-    url = f"{base_url}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    base_host = ENDPOINTS.get("gemini")
+    url = f"https://{base_host}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         res = requests.post(url, json=payload, timeout=30)
@@ -58,8 +70,8 @@ def call_gemini_text(prompt):
 
 def call_gemini_vision_seo(img_path, hn_title):
     """Gemini 1.5 Flash (画像解析 + SEO生成 - REST API版)"""
-    base_url = ENDPOINTS.get("gemini")
-    url = f"{base_url}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    base_host = ENDPOINTS.get("gemini")
+    url = f"https://{base_host}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     try:
         with open(img_path, "rb") as f:
             img_data = base64.b64encode(f.read()).decode("utf-8")
@@ -93,8 +105,8 @@ def generate_sticker_image(prompt):
     """無料の画像生成APIを使用して画像を生成"""
     try:
         encoded_prompt = urllib.parse.quote(prompt + " sticker design, die-cut, white background, vector art")
-        base_url = ENDPOINTS.get("pollinations")
-        url = f"{base_url}/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
+        base_host = ENDPOINTS.get("pollinations")
+        url = f"https://{base_host}/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
         
         res = requests.get(url, timeout=60)
         if res.status_code == 200:
@@ -109,8 +121,8 @@ def generate_sticker_image(prompt):
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
     try:
-        base_url = ENDPOINTS.get("freeimage")
-        url = f"{base_url}/api/1/upload"
+        base_host = ENDPOINTS.get("freeimage")
+        url = f"https://{base_host}/api/1/upload"
         data = {"key": FREEIMAGE_HOST_KEY, "action": "upload", "format": "json"}
         with open(filepath, 'rb') as f:
             res = requests.post(url, data=data, files={"source": f}, timeout=30)
@@ -129,10 +141,10 @@ def upload_to_printful(public_url, seo_data):
         "Content-Type": "application/json"
     }
 
-    base_url = ENDPOINTS.get("printful")
+    base_host = ENDPOINTS.get("printful")
     
     file_payload = {"role": "artwork", "url": public_url}
-    file_res = requests.post(f"{base_url}/files", headers=headers, json=file_payload, timeout=60)
+    file_res = requests.post(f"https://{base_host}/files", headers=headers, json=file_payload, timeout=60)
     if file_res.status_code != 200:
         return {"error": f"File API Error: {file_res.text}"}
     
@@ -152,7 +164,7 @@ def upload_to_printful(public_url, seo_data):
         ]
     }
     
-    res = requests.post(f"{base_url}/sync/products", headers=headers, json=product_payload, timeout=60)
+    res = requests.post(f"https://{base_host}/sync/products", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
 def notify_discord(title, public_url, error_msg=None):
@@ -174,10 +186,10 @@ def main():
 
     log("Pipeline Started")
     
-    base_url = ENDPOINTS.get("hacker_news")
+    base_host = ENDPOINTS.get("hacker_news")
     
     try:
-        hn_url = f"{base_url}/v0/topstories.json"
+        hn_url = f"https://{base_host}/v0/topstories.json"
         top_ids = requests.get(hn_url).json()
     except Exception as e:
         log(f"Failed to fetch Hacker News: {e}", error=True)
@@ -187,7 +199,7 @@ def main():
     
     for story_id in top_ids[:STICKER_LIMIT]:
         try:
-            item_url = f"{base_url}/v0/item/{story_id}.json"
+            item_url = f"https://{base_host}/v0/item/{story_id}.json"
             story = requests.get(item_url).json()
             hn_title = story.get('title')
             log(f"Processing: {hn_title}")
