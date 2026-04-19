@@ -39,11 +39,9 @@ def load_endpoints():
             raw_data = json.load(f)
             clean_data = {}
             for k, v in raw_data.items():
-                # Markdownリンクの自動変換バグを検知して修復: "[url](url)" -> "url"
                 match = re.search(r'\]\((.*?)\)', v)
                 if match:
                     v = match.group(1)
-                # URLから https:// や余計なカッコを削除し、純粋なホスト名のみを抽出
                 v = v.replace("https://", "").replace("http://", "")
                 v = v.replace("[", "").replace("]", "").strip()
                 clean_data[k] = v
@@ -52,26 +50,35 @@ def load_endpoints():
         log(f"Failed to load endpoints.json: {e}", error=True)
         return default_endpoints
 
-# エンドポイントの辞書をグローバル変数として保持
 ENDPOINTS = load_endpoints()
 
 def call_gemini_text(prompt):
-    """Gemini 1.5 Flash (テキスト生成 - REST API版)"""
+    """Gemini (テキスト生成) - 利用可能なモデルを自動で探してフォールバック"""
     base_host = ENDPOINTS.get("gemini")
-    url = f"https://{base_host}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # 成功する確率が高い順にモデルを複数定義
+    models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"]
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        res = requests.post(url, json=payload, timeout=30)
-        res.raise_for_status()
-        return res.json()['candidates'][0]['content']['parts'][0]['text']
-    except Exception as e:
-        log(f"Gemini Text API Error: {e}", error=True)
-        return None
+    
+    last_error = None
+    for model in models:
+        url = f"https://{base_host}/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            res = requests.post(url, json=payload, timeout=30)
+            res.raise_for_status()
+            return res.json()['candidates'][0]['content']['parts'][0]['text']
+        except Exception as e:
+            last_error = e
+            continue # エラーが出たら次のモデルを試す
+            
+    log(f"Gemini Text API Error (All models failed): {last_error}", error=True)
+    return None
 
 def call_gemini_vision_seo(img_path, hn_title):
-    """Gemini 1.5 Flash (画像解析 + SEO生成 - REST API版)"""
+    """Gemini (画像解析 + SEO生成) - 利用可能なモデルを自動で探してフォールバック"""
     base_host = ENDPOINTS.get("gemini")
-    url = f"https://{base_host}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # 画像解析対応のモデルリスト
+    models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-pro-vision"]
+    
     try:
         with open(img_path, "rb") as f:
             img_data = base64.b64encode(f.read()).decode("utf-8")
@@ -92,11 +99,21 @@ def call_gemini_vision_seo(img_path, hn_title):
             }]
         }
         
-        res = requests.post(url, json=payload, timeout=30)
-        res.raise_for_status()
-        text = res.json()['candidates'][0]['content']['parts'][0]['text']
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        return json.loads(match.group()) if match else json.loads(text)
+        last_error = None
+        for model in models:
+            url = f"https://{base_host}/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+            try:
+                res = requests.post(url, json=payload, timeout=30)
+                res.raise_for_status()
+                text = res.json()['candidates'][0]['content']['parts'][0]['text']
+                match = re.search(r'\{.*\}', text, re.DOTALL)
+                return json.loads(match.group()) if match else json.loads(text)
+            except Exception as e:
+                last_error = e
+                continue # エラーが出たら次のモデルを試す
+                
+        raise Exception(f"All vision models failed. Last error: {last_error}")
+        
     except Exception as e:
         log(f"SEO Generation Error: {e}", error=True)
         return {"title": f"Tech Trend Sticker: {hn_title[:20]}", "description": hn_title, "tags": ["tech"]}
