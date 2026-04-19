@@ -7,6 +7,7 @@ import re
 import urllib.parse
 from datetime import datetime
 import traceback
+from PIL import Image, ImageDraw, ImageFont
 
 # --- Configuration (GitHub Secrets) ---
 STICKER_LIMIT = int(os.getenv("STICKER_LIMIT", "5"))
@@ -64,18 +65,16 @@ def get_gemini_model_list():
     base_host = ENDPOINTS.get("gemini")
     url = f"https://{base_host}/v1beta/models?key={GEMINI_API_KEY}"
     
-    # 2026年以降の最新モデルを意識したフォールバックリスト
+    # 最新モデルを意識したフォールバックリスト
     default_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     
     try:
         res = requests.get(url, timeout=10)
         if res.status_code == 200:
             models_data = res.json().get("models", [])
-            # generateContent をサポートしているモデルだけを抽出
             valid_models = [m["name"].split("/")[-1] for m in models_data if "generateContent" in m.get("supportedGenerationMethods", [])]
             
             if valid_models:
-                # 処理が速くて安い "flash" 系モデルをリストの先頭に並べ替える
                 flash_models = [m for m in valid_models if "flash" in m]
                 other_models = [m for m in valid_models if "flash" not in m]
                 AVAILABLE_MODELS_CACHE = flash_models + other_models
@@ -102,7 +101,7 @@ def call_gemini_text(prompt):
             return res.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
             last_error = f"{model}: {e}"
-            continue # エラーが出たら次のモデルを試す
+            continue 
             
     log(f"Gemini Text API Error (All models failed): {last_error}", error=True)
     return None
@@ -143,7 +142,7 @@ def call_gemini_vision_seo(img_path, hn_title):
                 return json.loads(match.group()) if match else json.loads(text)
             except Exception as e:
                 last_error = f"{model}: {e}"
-                continue # エラーが出たら次のモデルを試す
+                continue 
                 
         raise Exception(f"All vision models failed. Last error: {last_error}")
         
@@ -158,7 +157,7 @@ def generate_sticker_image(prompt):
         base_host = ENDPOINTS.get("pollinations")
         url = f"https://{base_host}/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
         
-        res = requests.get(url, timeout=60)
+        res = requests.get(url, timeout=30)
         if res.status_code == 200:
             return base64.b64encode(res.content).decode('utf-8')
         else:
@@ -167,6 +166,26 @@ def generate_sticker_image(prompt):
     except Exception as e:
         log(f"Image Generation Error: {e}", error=True)
         return None
+
+def generate_fallback_image(text, filepath):
+    """外部API障害時: Pillowを使ってローカルでタイポグラフィ画像を生成して突破する"""
+    try:
+        # ダークグレーの背景画像を作成
+        img = Image.new('RGB', (512, 512), color=(40, 44, 52))
+        d = ImageDraw.Draw(img)
+        
+        # タイトルテキストを適当な長さで改行する
+        lines = [text[i:i+25] for i in range(0, len(text), 25)]
+        y_text = 200
+        for line in lines:
+            d.text((50, y_text), line, fill=(255, 255, 255))
+            y_text += 20
+            
+        img.save(filepath)
+        return True
+    except Exception as e:
+        log(f"Fallback Image Generation Error: {e}", error=True)
+        return False
 
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
@@ -184,7 +203,7 @@ def upload_to_temp_host(filepath):
     return ""
 
 def upload_to_printful(public_url, seo_data):
-    """Printfulへの出品"""
+    """Printfulへの出品 (405エラー回避のため事前File追加を廃止し、URL直接指定方式を採用)"""
     headers = {
         "Authorization": f"Bearer {PRINTFUL_API_KEY}",
         "X-PF-Store-Id": PRINTFUL_STORE_ID,
@@ -193,13 +212,6 @@ def upload_to_printful(public_url, seo_data):
 
     base_host = ENDPOINTS.get("printful")
     
-    file_payload = {"role": "artwork", "url": public_url}
-    file_res = requests.post(f"https://{base_host}/files", headers=headers, json=file_payload, timeout=60)
-    if file_res.status_code != 200:
-        return {"error": f"File API Error: {file_res.text}"}
-    
-    file_id = file_res.json()['result']['id']
-
     product_payload = {
         "sync_product": {
             "name": seo_data["title"],
@@ -209,7 +221,7 @@ def upload_to_printful(public_url, seo_data):
             {
                 "variant_id": VARIANT_ID,
                 "retail_price": "7.99",
-                "files": [{"id": file_id}]
+                "files": [{"url": public_url}]  # 外部URLを直接Printfulにパースさせる
             }
         ]
     }
@@ -263,13 +275,17 @@ def main():
             
             log("Generating Image...")
             img_b64 = generate_sticker_image(image_prompt)
-            if not img_b64: 
-                log("Failed to generate image", error=True)
-                continue
-            
             filepath = os.path.join(OUTPUT_DIR, f"{story_id}.png")
-            with open(filepath, "wb") as f:
-                f.write(base64.b64decode(img_b64))
+            
+            # APIが成功すれば画像を保存、失敗すればローカルで代替生成する
+            if img_b64: 
+                with open(filepath, "wb") as f:
+                    f.write(base64.b64decode(img_b64))
+            else:
+                log("Image API Failed. Using local fallback generation...")
+                if not generate_fallback_image(hn_title, filepath):
+                    log("All image generation methods failed.", error=True)
+                    continue
 
             log("Generating SEO Data...")
             seo_data = call_gemini_vision_seo(filepath, hn_title)
