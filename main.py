@@ -18,9 +18,6 @@ PRINTFUL_STORE_ID = os.getenv("PRINTFUL_STORE_ID", "").strip()
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 FREEIMAGE_HOST_KEY = os.getenv("FREEIMAGE_HOST_KEY", "6d207e02198a847aa98d0a2a901485a5").strip()
 
-# Printful Settings
-VARIANT_ID = 3559 
-
 def log(msg, error=False):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     prefix = "[ERROR]" if error else "[INFO]"
@@ -202,8 +199,37 @@ def upload_to_temp_host(filepath):
         log(f"Freeimage Host Error: {e}", error=True)
     return ""
 
+def get_valid_sticker_variant(headers, base_host):
+    """Printfulのカタログから有効なステッカーのVariant IDを動的に自動取得する"""
+    try:
+        # 1. 最も一般的なステッカー(Kiss-Cut Stickers: Product ID 14)を確認
+        res = requests.get(f"https://{base_host}/catalog/products/14", headers=headers, timeout=30)
+        if res.status_code == 200:
+            variants = res.json().get("result", {}).get("variants", [])
+            if variants:
+                log(f"Found valid default variant ID: {variants[0]['id']}")
+                return variants[0]["id"]
+        
+        # 2. ダメなら全カタログから「sticker」を検索して有効なIDを探す
+        res_all = requests.get(f"https://{base_host}/catalog/products", headers=headers, timeout=30)
+        if res_all.status_code == 200:
+            for p in res_all.json().get("result", []):
+                if "sticker" in p.get("title", "").lower():
+                    prod_id = p["id"]
+                    res_var = requests.get(f"https://{base_host}/catalog/products/{prod_id}", headers=headers, timeout=30)
+                    if res_var.status_code == 200:
+                        vars = res_var.json().get("result", {}).get("variants", [])
+                        if vars:
+                            log(f"Found dynamic variant ID from catalog: {vars[0]['id']}")
+                            return vars[0]["id"]
+    except Exception as e:
+        log(f"Auto-Fetch Variant Error: {e}", error=True)
+    
+    # 全て失敗した場合は定番のIDを返す（エラーで落ちないようにする）
+    return 3559
+
 def upload_to_printful(public_url, seo_data):
-    """Printfulへの出品 (405エラー回避のため事前File追加を廃止し、URL直接指定方式を採用)"""
+    """Printfulへの出品 (事前File追加を廃止し、URL直接指定方式を採用)"""
     headers = {
         "Authorization": f"Bearer {PRINTFUL_API_KEY}",
         "X-PF-Store-Id": PRINTFUL_STORE_ID,
@@ -211,6 +237,7 @@ def upload_to_printful(public_url, seo_data):
     }
 
     base_host = ENDPOINTS.get("printful")
+    valid_variant_id = get_valid_sticker_variant(headers, base_host)
     
     product_payload = {
         "sync_product": {
@@ -219,14 +246,13 @@ def upload_to_printful(public_url, seo_data):
         },
         "sync_variants": [
             {
-                "variant_id": VARIANT_ID,
+                "variant_id": valid_variant_id,
                 "retail_price": "7.99",
                 "files": [{"url": public_url}]  # 外部URLを直接Printfulにパースさせる
             }
         ]
     }
     
-    # 修正点: /sync/products ではなく /store/products がPrintful APIの正しい商品作成エンドポイント
     res = requests.post(f"https://{base_host}/store/products", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
