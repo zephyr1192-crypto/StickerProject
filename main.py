@@ -226,7 +226,8 @@ def upload_to_printful(public_url, seo_data):
         ]
     }
     
-    res = requests.post(f"https://{base_host}/sync/products", headers=headers, json=product_payload, timeout=60)
+    # 修正点: /sync/products ではなく /store/products がPrintful APIの正しい商品作成エンドポイント
+    res = requests.post(f"https://{base_host}/store/products", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
 def notify_discord(title, public_url, error_msg=None):
