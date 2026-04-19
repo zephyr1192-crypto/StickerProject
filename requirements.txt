@@ -1,8 +1,8 @@
-pandasrequespandas
+pandas
 requests
 playwright
 typer
 rich
 pydantic-settings
 google-generativeai
-pillowtsplaywrighttyperrichpydantic-settingsgoogle-generativeaipillow
+pillow
