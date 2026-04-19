@@ -13,6 +13,9 @@ class AppSettings(BaseSettings):
     # Printful API連携用
     printful_api_key: str = ""
     printful_store_id: str = ""
+    
+    # Gemini API連携用 (新規追加)
+    gemini_api_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

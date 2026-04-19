@@ -43,6 +43,8 @@ jobs:
           STICKER_LIMIT: "5"
           STICKER_OUTPUT_DIR: stickers_output
           PRINTFUL_API_KEY: ${{ secrets.PRINTFUL_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -58,20 +60,6 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: stickers_output/
-
-      - name: Discord Notification (Success)
-        if: success()
-        run: |
-          curl -H "Content-Type: application/json" \
-          -d '{"content": "✅ **ステッカー自動生成完了！**\nPrintfulへの納品とギャラリーの更新が終わりました。\nギャラリーを確認: https://zephyr1192-crypto.github.io/StickerProject/"}' \
-          ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-      - name: Discord Notification (Failure)
-        if: failure()
-        run: |
-          curl -H "Content-Type: application/json" \
-          -d '{"content": "🚨 **【警告】ステッカー生成でエラーが発生しました！**\nGitHub Actionsのログを確認してください。"}' \
-          ${{ secrets.DISCORD_WEBHOOK_URL }}
 
   deploy-to-pages:
     environment:
