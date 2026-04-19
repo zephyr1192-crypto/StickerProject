@@ -27,7 +27,7 @@ def log(msg, error=False):
 
 def call_gemini_text(prompt):
     """Gemini 1.5 Flash (テキスト生成 - REST API版)"""
-    url = "https://" + f"[generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
+    url = "https://" + "generativelanguage." + f"[googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         res = requests.post(url, json=payload, timeout=30)
@@ -39,7 +39,7 @@ def call_gemini_text(prompt):
 
 def call_gemini_vision_seo(img_path, hn_title):
     """Gemini 1.5 Flash (画像解析 + SEO生成 - REST API版)"""
-    url = "https://" + f"[generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
+    url = "https://" + "generativelanguage." + f"[googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=](https://googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=){GEMINI_API_KEY}"
     try:
         with open(img_path, "rb") as f:
             img_data = base64.b64encode(f.read()).decode("utf-8")
@@ -73,8 +73,7 @@ def generate_sticker_image(prompt):
     """無料の画像生成APIを使用して画像を生成"""
     try:
         encoded_prompt = urllib.parse.quote(prompt + " sticker design, die-cut, white background, vector art")
-        # Markdownの自動リンク化を防ぐためURLを分割
-        url = "https://" + f"image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
+        url = "https://" + "image." + f"pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
         
         res = requests.get(url, timeout=60)
         if res.status_code == 200:
@@ -89,7 +88,7 @@ def generate_sticker_image(prompt):
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
     try:
-        url = "https://" + "freeimage.host/api/1/upload"
+        url = "https://" + "freeimage." + "host/api/1/upload"
         data = {"key": FREEIMAGE_HOST_KEY, "action": "upload", "format": "json"}
         with open(filepath, 'rb') as f:
             res = requests.post(url, data=data, files={"source": f}, timeout=30)
@@ -109,7 +108,7 @@ def upload_to_printful(public_url, seo_data):
     }
 
     file_payload = {"role": "artwork", "url": public_url}
-    file_res = requests.post("https://" + "[api.printful.com/files](https://api.printful.com/files)", headers=headers, json=file_payload, timeout=60)
+    file_res = requests.post("https://" + "api." + "[printful.com/files](https://printful.com/files)", headers=headers, json=file_payload, timeout=60)
     if file_res.status_code != 200:
         return {"error": f"File API Error: {file_res.text}"}
     
@@ -129,7 +128,7 @@ def upload_to_printful(public_url, seo_data):
         ]
     }
     
-    res = requests.post("https://" + "[api.printful.com/sync/products](https://api.printful.com/sync/products)", headers=headers, json=product_payload, timeout=60)
+    res = requests.post("https://" + "api." + "[printful.com/sync/products](https://printful.com/sync/products)", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
 def notify_discord(title, public_url, error_msg=None):
@@ -152,7 +151,7 @@ def main():
     log("Pipeline Started")
     
     try:
-        hn_url = "https://" + "[hacker-news.firebaseio.com/v0/topstories.json](https://hacker-news.firebaseio.com/v0/topstories.json)"
+        hn_url = "https://" + "hacker-news." + "[firebaseio.com/v0/topstories.json](https://firebaseio.com/v0/topstories.json)"
         top_ids = requests.get(hn_url).json()
     except Exception as e:
         log(f"Failed to fetch Hacker News: {e}", error=True)
@@ -162,7 +161,7 @@ def main():
     
     for story_id in top_ids[:STICKER_LIMIT]:
         try:
-            item_url = "https://" + f"[hacker-news.firebaseio.com/v0/item/](https://hacker-news.firebaseio.com/v0/item/){story_id}.json"
+            item_url = "https://" + "hacker-news." + f"[firebaseio.com/v0/item/](https://firebaseio.com/v0/item/){story_id}.json"
             story = requests.get(item_url).json()
             hn_title = story.get('title')
             log(f"Processing: {hn_title}")
