@@ -200,36 +200,69 @@ def upload_to_temp_host(filepath):
     return ""
 
 def get_valid_sticker_variant(headers, base_host):
-    """Printfulのカタログから有効なステッカーのVariant IDを動的に自動取得する"""
+    """Printfulのカタログから有効なステッカーのVariant IDを動的に自動取得する（型エラー完全回避版）"""
     try:
-        # 1. 最も一般的なステッカー(Kiss-Cut Stickers: Product ID 14)を確認
+        # ステッカーの代表的なProduct ID(14)で検索
         res = requests.get(f"https://{base_host}/catalog/products/14", headers=headers, timeout=30)
         if res.status_code == 200:
-            variants = res.json().get("result", {}).get("variants", [])
-            if variants:
-                log(f"Found valid default variant ID: {variants[0]['id']}")
-                return variants[0]["id"]
-        
-        # 2. ダメなら全カタログから「sticker」を検索して有効なIDを探す
+            data = res.json()
+            result = data.get("result", {})
+            
+            # パターンA: resultが辞書型（公式ドキュメント準拠）
+            if isinstance(result, dict):
+                variants = result.get("variants", [])
+                if isinstance(variants, list) and len(variants) > 0 and isinstance(variants[0], dict):
+                    vid = variants[0].get("id")
+                    if vid:
+                        log(f"Found valid default variant ID (Pattern A): {vid}")
+                        return vid
+                        
+            # パターンB: result自体がリスト型（API仕様のサイレント変更時）
+            elif isinstance(result, list) and len(result) > 0 and isinstance(result[0], dict):
+                vid = result[0].get("id")
+                if vid:
+                    log(f"Found valid default variant ID (Pattern B): {vid}")
+                    return vid
+
+        # Product 14がダメなら、カタログ全体から "sticker" を検索
         res_all = requests.get(f"https://{base_host}/catalog/products", headers=headers, timeout=30)
         if res_all.status_code == 200:
-            for p in res_all.json().get("result", []):
-                if "sticker" in p.get("title", "").lower():
-                    prod_id = p["id"]
-                    res_var = requests.get(f"https://{base_host}/catalog/products/{prod_id}", headers=headers, timeout=30)
-                    if res_var.status_code == 200:
-                        vars = res_var.json().get("result", {}).get("variants", [])
-                        if vars:
-                            log(f"Found dynamic variant ID from catalog: {vars[0]['id']}")
-                            return vars[0]["id"]
+            result_all = res_all.json().get("result", [])
+            
+            if isinstance(result_all, dict):
+                result_all = [result_all]
+                
+            if isinstance(result_all, list):
+                for p in result_all:
+                    if isinstance(p, dict) and "sticker" in p.get("title", "").lower():
+                        prod_id = p.get("id")
+                        if not prod_id: continue
+                        
+                        res_var = requests.get(f"https://{base_host}/catalog/products/{prod_id}", headers=headers, timeout=30)
+                        if res_var.status_code == 200:
+                            var_data = res_var.json()
+                            var_result = var_data.get("result", {})
+                            
+                            if isinstance(var_result, dict):
+                                variants = var_result.get("variants", [])
+                                if isinstance(variants, list) and len(variants) > 0 and isinstance(variants[0], dict):
+                                    vid = variants[0].get("id")
+                                    if vid:
+                                        log(f"Found dynamic variant ID from catalog: {vid}")
+                                        return vid
+                            elif isinstance(var_result, list) and len(var_result) > 0 and isinstance(var_result[0], dict):
+                                vid = var_result[0].get("id")
+                                if vid:
+                                    log(f"Found dynamic variant ID from catalog (List format): {vid}")
+                                    return vid
     except Exception as e:
         log(f"Auto-Fetch Variant Error: {e}", error=True)
     
-    # 全て失敗した場合は定番のIDを返す（エラーで落ちないようにする）
+    log("Could not dynamically fetch variant ID. Using fallback ID: 3559", error=True)
     return 3559
 
 def upload_to_printful(public_url, seo_data):
-    """Printfulへの出品 (事前File追加を廃止し、URL直接指定方式を採用)"""
+    """Printfulへの出品"""
     headers = {
         "Authorization": f"Bearer {PRINTFUL_API_KEY}",
         "X-PF-Store-Id": PRINTFUL_STORE_ID,
@@ -248,7 +281,7 @@ def upload_to_printful(public_url, seo_data):
             {
                 "variant_id": valid_variant_id,
                 "retail_price": "7.99",
-                "files": [{"url": public_url}]  # 外部URLを直接Printfulにパースさせる
+                "files": [{"url": public_url}]
             }
         ]
     }
