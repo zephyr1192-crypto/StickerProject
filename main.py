@@ -20,17 +20,33 @@ FREEIMAGE_HOST_KEY = os.getenv("FREEIMAGE_HOST_KEY", "6d207e02198a847aa98d0a2a90
 # Printful Settings
 VARIANT_ID = 3559 
 
-# URL自動リンク化バグ防止用の変数
-DOT = "."
-
 def log(msg, error=False):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     prefix = "[ERROR]" if error else "[INFO]"
     print(f"{timestamp} {prefix} {msg}")
 
+def load_endpoints():
+    """外部設定ファイルからAPIエンドポイントを読み込む"""
+    try:
+        with open("endpoints.json", "r") as f:
+            return json.load(f)
+    except Exception as e:
+        log(f"Failed to load endpoints.json: {e}", error=True)
+        # フォールバック用のデフォルトURL（エラー回避用）
+        return {
+            "gemini": "[https://generativelanguage.googleapis.com](https://generativelanguage.googleapis.com)",
+            "pollinations": "[https://image.pollinations.ai](https://image.pollinations.ai)",
+            "freeimage": "[https://freeimage.host](https://freeimage.host)",
+            "printful": "[https://api.printful.com](https://api.printful.com)",
+            "hacker_news": "[https://hacker-news.firebaseio.com](https://hacker-news.firebaseio.com)"
+        }
+
+ENDPOINTS = load_endpoints()
+
 def call_gemini_text(prompt):
     """Gemini 1.5 Flash (テキスト生成 - REST API版)"""
-    url = f"[https://generativelanguage.googleapis](https://generativelanguage.googleapis){DOT}com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    base_url = ENDPOINTS.get("gemini")
+    url = f"{base_url}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
         res = requests.post(url, json=payload, timeout=30)
@@ -42,7 +58,8 @@ def call_gemini_text(prompt):
 
 def call_gemini_vision_seo(img_path, hn_title):
     """Gemini 1.5 Flash (画像解析 + SEO生成 - REST API版)"""
-    url = f"[https://generativelanguage.googleapis](https://generativelanguage.googleapis){DOT}com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    base_url = ENDPOINTS.get("gemini")
+    url = f"{base_url}/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     try:
         with open(img_path, "rb") as f:
             img_data = base64.b64encode(f.read()).decode("utf-8")
@@ -76,7 +93,8 @@ def generate_sticker_image(prompt):
     """無料の画像生成APIを使用して画像を生成"""
     try:
         encoded_prompt = urllib.parse.quote(prompt + " sticker design, die-cut, white background, vector art")
-        url = f"[https://image.pollinations](https://image.pollinations){DOT}ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
+        base_url = ENDPOINTS.get("pollinations")
+        url = f"{base_url}/prompt/{encoded_prompt}?width=512&height=512&nologo=true"
         
         res = requests.get(url, timeout=60)
         if res.status_code == 200:
@@ -91,7 +109,8 @@ def generate_sticker_image(prompt):
 def upload_to_temp_host(filepath):
     """画像の公開URL化"""
     try:
-        url = f"https://freeimage{DOT}host/api/1/upload"
+        base_url = ENDPOINTS.get("freeimage")
+        url = f"{base_url}/api/1/upload"
         data = {"key": FREEIMAGE_HOST_KEY, "action": "upload", "format": "json"}
         with open(filepath, 'rb') as f:
             res = requests.post(url, data=data, files={"source": f}, timeout=30)
@@ -110,8 +129,10 @@ def upload_to_printful(public_url, seo_data):
         "Content-Type": "application/json"
     }
 
+    base_url = ENDPOINTS.get("printful")
+    
     file_payload = {"role": "artwork", "url": public_url}
-    file_res = requests.post(f"[https://api.printful](https://api.printful){DOT}com/files", headers=headers, json=file_payload, timeout=60)
+    file_res = requests.post(f"{base_url}/files", headers=headers, json=file_payload, timeout=60)
     if file_res.status_code != 200:
         return {"error": f"File API Error: {file_res.text}"}
     
@@ -131,7 +152,7 @@ def upload_to_printful(public_url, seo_data):
         ]
     }
     
-    res = requests.post(f"[https://api.printful](https://api.printful){DOT}com/sync/products", headers=headers, json=product_payload, timeout=60)
+    res = requests.post(f"{base_url}/sync/products", headers=headers, json=product_payload, timeout=60)
     return res.json()
 
 def notify_discord(title, public_url, error_msg=None):
@@ -153,8 +174,10 @@ def main():
 
     log("Pipeline Started")
     
+    base_url = ENDPOINTS.get("hacker_news")
+    
     try:
-        hn_url = f"[https://hacker-news.firebaseio](https://hacker-news.firebaseio){DOT}com/v0/topstories.json"
+        hn_url = f"{base_url}/v0/topstories.json"
         top_ids = requests.get(hn_url).json()
     except Exception as e:
         log(f"Failed to fetch Hacker News: {e}", error=True)
@@ -164,7 +187,7 @@ def main():
     
     for story_id in top_ids[:STICKER_LIMIT]:
         try:
-            item_url = f"[https://hacker-news.firebaseio](https://hacker-news.firebaseio){DOT}com/v0/item/{story_id}.json"
+            item_url = f"{base_url}/v0/item/{story_id}.json"
             story = requests.get(item_url).json()
             hn_title = story.get('title')
             log(f"Processing: {hn_title}")
