@@ -52,11 +52,45 @@ def load_endpoints():
 
 ENDPOINTS = load_endpoints()
 
+# 利用可能なモデルをキャッシュするリスト
+AVAILABLE_MODELS_CACHE = []
+
+def get_gemini_model_list():
+    """APIから現在のアカウントで利用可能なモデル一覧を自動取得する"""
+    global AVAILABLE_MODELS_CACHE
+    if AVAILABLE_MODELS_CACHE:
+        return AVAILABLE_MODELS_CACHE
+        
+    base_host = ENDPOINTS.get("gemini")
+    url = f"https://{base_host}/v1beta/models?key={GEMINI_API_KEY}"
+    
+    # 2026年以降の最新モデルを意識したフォールバックリスト
+    default_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            models_data = res.json().get("models", [])
+            # generateContent をサポートしているモデルだけを抽出
+            valid_models = [m["name"].split("/")[-1] for m in models_data if "generateContent" in m.get("supportedGenerationMethods", [])]
+            
+            if valid_models:
+                # 処理が速くて安い "flash" 系モデルをリストの先頭に並べ替える
+                flash_models = [m for m in valid_models if "flash" in m]
+                other_models = [m for m in valid_models if "flash" not in m]
+                AVAILABLE_MODELS_CACHE = flash_models + other_models
+                log(f"APIから利用可能なモデルを自動取得しました: 先頭候補 {AVAILABLE_MODELS_CACHE[0]}")
+                return AVAILABLE_MODELS_CACHE
+    except Exception as e:
+        log(f"モデルの自動取得に失敗しました。デフォルトリストを使用します: {e}")
+        
+    AVAILABLE_MODELS_CACHE = default_models
+    return AVAILABLE_MODELS_CACHE
+
 def call_gemini_text(prompt):
     """Gemini (テキスト生成) - 利用可能なモデルを自動で探してフォールバック"""
     base_host = ENDPOINTS.get("gemini")
-    # 成功する確率が高い順にモデルを複数定義
-    models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"]
+    models = get_gemini_model_list()
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     
     last_error = None
@@ -67,7 +101,7 @@ def call_gemini_text(prompt):
             res.raise_for_status()
             return res.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
-            last_error = e
+            last_error = f"{model}: {e}"
             continue # エラーが出たら次のモデルを試す
             
     log(f"Gemini Text API Error (All models failed): {last_error}", error=True)
@@ -76,8 +110,7 @@ def call_gemini_text(prompt):
 def call_gemini_vision_seo(img_path, hn_title):
     """Gemini (画像解析 + SEO生成) - 利用可能なモデルを自動で探してフォールバック"""
     base_host = ENDPOINTS.get("gemini")
-    # 画像解析対応のモデルリスト
-    models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-pro-vision"]
+    models = get_gemini_model_list()
     
     try:
         with open(img_path, "rb") as f:
@@ -109,7 +142,7 @@ def call_gemini_vision_seo(img_path, hn_title):
                 match = re.search(r'\{.*\}', text, re.DOTALL)
                 return json.loads(match.group()) if match else json.loads(text)
             except Exception as e:
-                last_error = e
+                last_error = f"{model}: {e}"
                 continue # エラーが出たら次のモデルを試す
                 
         raise Exception(f"All vision models failed. Last error: {last_error}")
